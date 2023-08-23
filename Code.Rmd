@@ -1,0 +1,409 @@
+---
+title: "Data project 2: Game developer A/B testing"
+author: Joy Lin
+output: 
+  pdf_document:
+          number_sections: false
+---
+
+```{r, include=FALSE}
+options(tinytex.verbose = TRUE)
+```
+
+
+```{r, echo = FALSE, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(knitr)
+dat <- read_csv("game_data.csv")
+```
+
+
+## Problem 1: Exploring the data
+
+### Part a
+
+
+```{r}
+
+only_retained_1 <- filter(dat, retained_1 == "TRUE", retained_7 == "FALSE")$games_played
+only_retained_7 <- filter(dat, retained_1 == "FALSE", retained_7 == "TRUE")$games_played
+retained_both <- filter(dat, retained_1 == "TRUE", retained_7 == "TRUE")$games_played
+retained_neither <- filter(dat, retained_1 == "FALSE", retained_7 == "FALSE")$games_played
+
+ggplot(show.legend = TRUE) +
+  geom_histogram(aes(only_retained_1, 
+                     fill = "Played 1 day after installation"), 
+                 alpha = 0.5, col = "white") +
+  geom_histogram(aes(only_retained_7, 
+                     fill = "Played 7 days after installation"), 
+                 alpha = 0.5, 
+                 col = "white") +
+  geom_histogram(aes(retained_both, 
+                     fill = "Played 1 day and 7 days after installation"), 
+                 alpha = 0.5, 
+                 col = "white") +
+  geom_histogram(aes(retained_neither, 
+                     fill = "Never played after 1 day after installation"), 
+                 alpha = 0.5, 
+                 col = "white") +
+  scale_x_log10() +
+  labs(x = "Logged Games Played", 
+       y = "Frequency", 
+       title = "Histogram of Logged Games Played for Different Retention"
+       ) +
+  scale_fill_discrete(name = "Retention") +
+  theme_minimal()
+
+```
+
+
+
+### Part b
+
+
+```{r}
+
+group_a <- filter(dat, group == "A")
+group_b <- filter(dat, group == "B")
+
+ggplot(show.legend = TRUE) +
+  geom_histogram(aes(group_a$games_played, 
+                     fill = "A"), 
+                 alpha = 0.5, 
+                 col = "white") +
+  geom_histogram(aes(group_b$games_played, 
+                     fill = "B"), 
+                 alpha = 0.5, 
+                 col = "white") +
+  scale_x_log10() +
+  labs(x = "Games Played", 
+       y = "Frequency", 
+       title = "Histogram of Games Played by Different Groups"
+       ) +
+  scale_fill_discrete(name = "Group") +
+  theme_classic()
+
+```
+
+#Based on my plot, I would recommend Version B over Version A because there are more participants from Group B in almost every different number of games played.
+
+
+
+### Part c
+
+```{r}
+
+group_a <- filter(dat, group == "A")
+group_b <- filter(dat, group == "B")
+proportion_1day <- function(x) {return(nrow(filter(x, retained_1 == "TRUE")) / nrow(x))}
+proportion_7day <- function(x) {return(nrow(filter(x, retained_7 == "TRUE")) / nrow(x))}
+
+group_a_1day <- proportion_1day(group_a)
+group_a_1day
+#0.4481879
+
+group_b_1day <- proportion_1day(group_b)
+group_b_1day
+#0.4422827
+
+group_a_7day <- proportion_7day(group_a)
+group_a_7day
+#0.1902013
+
+group_b_7day <- proportion_7day(group_b)
+group_b_7day
+#0.182
+
+```
+
+
+
+
+## Problem 2: Bootstrapped estimates
+
+### Part a
+
+```{r}
+
+
+n_2a <- nrow(dat)
+alpha_2a <- 0.05
+mu_2a <- mean(dat$games_played)
+sigma_2a <- sd(dat$games_played)
+
+t_2a <- qt(1 - alpha_2a/2, n_2a-1)
+theoretical_ci_2a <- c(mu_2a - t_2a * sigma_2a / sqrt(n_2a), 
+                    mu_2a + t_2a * sigma_2a / sqrt(n_2a))
+theoretical_ci_2a
+
+# confirm that it agrees with the inbuilt function
+t.test(dat$games_played)$conf.int
+
+```
+
+#The 95% CI is [50.59947, 53.14545]. It is confirmed by the inbuilt function.
+
+
+
+### Part b
+
+```{r}
+
+sample_data_2b <- dat$games_played
+alpha_2b <- 0.05
+set.seed(90000)
+
+# draw N non-parametric bootstrap samples from our sample
+samples_boot_2b <- map(1:1000, ~sample(sample_data_2b, replace = TRUE))
+
+# calculate the (bootstrap) mean for each bootstrap sample
+boot_means_2b <- map_dbl(samples_boot_2b, ~mean(.))
+
+# plot histogram of bootstrap estimates
+ggplot() +
+  geom_histogram(aes(x = boot_means_2b), 
+                 color = "white",
+                 binwidth = 0.1) +
+  # add a line for the sample estimate of the mean
+  geom_vline(xintercept = mean(sample_data_2b), 
+             color = "orange", size = 2) +
+  # add a line for the bootstrapped estimate of the mean
+  geom_vline(xintercept = mean(boot_means_2b), 
+             color = "cornflowerblue", size = 2) +
+  labs(x = "bootstrapped sample mean", 
+       title = "Bootstrapped estimates of the average number of games played in the first 14 days") +
+  theme_classic()
+
+# compute a 95% CI from these bootstrapped means
+boot_ci <- c(quantile(boot_means_2b, alpha_2b/2), 
+             quantile(boot_means_2b, (1 - alpha_2b/2)))
+boot_ci
+
+```
+
+#The bootstrap CI is [50.77141, 53.16931], which is slightly narrower than the classical confidence interval from the previous question.
+
+
+
+### Part c
+
+```{r}
+
+set.seed(90000)
+
+#Group A
+# draw 1000 non-parametric bootstrap samples from our sample
+samples_boot_a_2c <- map(1:1000, ~sample(group_a$retained_1, replace = TRUE))
+# calculate the (bootstrap) proportion for each bootstrap sample
+boot_props_a_2c <- map_dbl(samples_boot_a_2c, ~mean(.))
+
+#Group B
+# draw 1000 non-parametric bootstrap samples from our sample
+samples_boot_b_2c <- map(1:1000, ~sample(group_b$retained_1, replace = TRUE))
+# calculate the (bootstrap) proportion for each bootstrap sample
+boot_props_b_2c <- map_dbl(samples_boot_b_2c, ~mean(.))
+
+# plot histogram of bootstrap estimates
+ggplot() +
+  geom_histogram(aes(x = boot_props_a_2c, fill = "A"), alpha = 0.5, col = "white",
+                 binwidth = 0.0005) +
+  geom_histogram(aes(x = boot_props_b_2c, fill = "B"), alpha = 0.5, col = "white",
+                 binwidth = 0.0005) +
+  scale_fill_discrete(name = "Group") +
+  labs(x = "bootstrapped sample proportion", 
+       title = "Bootstrapped estimates of the proportion of retention at day 1") +
+  theme_classic()
+
+
+```
+
+#Based on my plot, I would recommend Version A over Version B because a slightly larger proportion of participants from Group A that played games after one day of installation.
+
+
+
+### Part d
+
+
+```{r}
+
+set.seed(90000)
+
+#Group A
+# draw 1000 non-parametric bootstrap samples from our sample
+samples_boot_a_2d <- map(1:1000, ~sample(group_a$retained_7, replace = TRUE))
+# calculate the (bootstrap) proportion for each bootstrap sample
+boot_props_a_2d <- map_dbl(samples_boot_a_2d, ~mean(.))
+
+#Group B
+# draw 1000 non-parametric bootstrap samples from our sample
+samples_boot_b_2d <- map(1:1000, ~sample(group_b$retained_7, replace = TRUE))
+# calculate the (bootstrap) proportion for each bootstrap sample
+boot_props_b_2d <- map_dbl(samples_boot_b_2d, ~mean(.))
+
+# plot histogram of bootstrap estimates
+ggplot() +
+  geom_histogram(aes(x = boot_props_a_2d, fill = "A"), alpha = 0.5, col = "white",
+                 binwidth = 0.0005) +
+  geom_histogram(aes(x = boot_props_b_2d, fill = "B"), alpha = 0.5, col = "white",
+                 binwidth = 0.0005) +
+  scale_fill_discrete(name = "Group") +
+  labs(x = "bootstrapped sample proportion", 
+       title = "Bootstrapped estimates of the proportion of retention at day 7") +
+  theme_classic()
+
+```
+
+
+#Based on my plot, I would recommend Version A over Version B because a very larger proportion of participants from Group A that played games after seven days of installation. My recommendation agrees with my conclusion in part c of this question. These findings are more compelling than the 1-day findings because the distribution of the bootstrapped sample proportion of the two groups are not even overlapped but keep a longer distance from each other, which makes the conclusion more explicit, and because games that attract people in longer duration tend to be more fun and we could like more long-lasting players.
+
+
+
+
+## Problem 3: Hypothesis tests
+
+### Part a
+
+# H0: mu = 52; The average player plays 52 games in the 14 days after they install the app. 
+# H1: mu < 52; The average player plays less than 52 games in the 14 days after they install the app.
+# Test statistic: 1-sample t test with unknown variance; distribution with degree of freedom of length(dat$games_played) - 1
+# p-value: P(T <= t) = pt(t, df); If p-value < significance level 0.05, we reject H0; Else, we fail to reject H0.
+
+```{r}
+
+n_3a <- length(dat$games_played)
+x_bar_3a <- mean(dat$games_played)
+sd_3a <- sd(dat$games_played)
+
+t_3a <- (x_bar_3a - 52) / (sd_3a / sqrt(n_3a))
+pval_3a <- pt(t_3a, df = n_3a-1)
+pval_3a
+
+# confirm that it agrees with the inbuilt function
+t.test(dat$games_played, mu = 52, alternative = "less", correct = FALSE)
+
+
+```
+
+#The p-value is  0.4221585, which is confirmed by the inbuilt function. Because it is larger than 0.05 and thus not statistically significant, we cannot reject the null hypothesis. Thus, my coworker's claim is not rejected and my boss's claim is not in favor at the 0.05 significance level. 
+
+
+
+### Part b
+
+# When interpreting the average game play data, we should be more careful and consider whether the distribution of number of players is normal (which is, in fact, right-skewed) before we use normal approximation because t-test assumes that the data is normally distributed. When interpreting the result of the hypothesis test, the distribution of number of players can also tell us how close the mean should be to each bound of the confidence interval.
+
+
+### Part c
+
+# H0: mu1 = mu2; There is no difference in the number of games played in the first 14 days across groups A and B. 
+# H1: mu1 != mu2; There is a difference in the number of games played in the first 14 days across groups A and B.
+# Test statistic: 2-sample t-test with unequal, unknown variance; distribution with degree of freedom of (s1^2/n + s2^2/m)^2 / (s1^4 / (n^2 * (n-1)) + s2^4 / (m^2 * (m-1))), where n and m are the sample sizes of group A and B, s1 and s2 are the sample standard deviations of group A and B
+# p-value: P(T <= t) = 2(1-pt(|t|, df)); If p-value < significance level 0.05, we reject H0; Else, we fail to reject H0.
+
+```{r}
+
+n_3c <- nrow(group_a)
+m_3c <- nrow(group_b)
+xbar_3c <- mean(group_a$games_played)
+ybar_3c <- mean(group_b$games_played)
+s1_3c <- sd(group_a$games_played)
+s2_3c <- sd(group_b$games_played)
+
+s1_3c - s2_3c
+# != 0, so unequal variance, no pooled variance
+
+df_3c <- (s1_3c^2/n_3c + s2_3c^2/m_3c)^2 / (s1_3c^4 / (n_3c^2 * (n_3c-1)) + s2_3c^4 / (m_3c^2 * (m_3c-1)))
+t_3c <- (xbar_3c - ybar_3c) / (sqrt(s1_3c^2/n_3c + s2_3c^2 / m_3c))
+pval_3c <- 2 * (1 - pt(abs(t_3c), df_3c))
+pval_3c
+
+# Compare with variance unequal (Welch's) test
+t.test(group_a$games_played, group_b$games_played, alternative = "two.sided", correct = FALSE)
+
+```
+
+# I conduct a 2-sample t-test with unknown, unequal variance at 0.05 significance level, and do not use a pooled variance estimator because the two groups do not have equal variance. The p-value is 0.3759244, which is confirmed by the inbuilt function. Because it is larger than 0.05 and thus not statistically significant, we cannot reject the null hypothesis that there is no difference in the number of games played in the first 14 days across groups A and B at the 0.05 significance level. My answer agrees with conclusion from the Figure I produced in Problem 1.2.
+
+
+### Part d
+
+# H0: mu1 = mu2; There is no difference in the proportion of players that are retained after 1 day across groups A and B. 
+# H1: mu1 != mu2; There is a difference in the proportion of players that are retained after 1 day across groups A and B.
+# Test statistic: 2-sample z-test for proportion with unequal variance; Normal distribution
+# p-value: P(Z <= z) = 2(1-pnorm(|z|)); If p-value < significance level 0.05, we reject H0; Else, we fail to reject H0.
+
+
+```{r}
+
+n_3d <- length(group_a$retained_1)
+m_3d <- length(group_b$retained_1)
+p1_3d <- mean(group_a$retained_1)
+p2_3d <- mean(group_b$retained_1)
+s1_3d <- sd(filter(group_a, retained_1 == TRUE)$games_played)
+s2_3d <- sd(filter(group_b, retained_1 == TRUE)$games_played)
+p_3d <- mean(c(group_a$retained_1, group_b$retained_1))
+
+z_3d <- (p1_3d - p2_3d - 0) / (sqrt(p_3d * (1 - p_3d) * (1/n_3d + 1/m_3d)))
+pval_3d <- 2 * (1 - pnorm(abs(z_3d)))
+pval_3d
+
+# Compare with variance unequal (Welch's) test
+prop.test(x = c(sum(group_a$retained_1), 
+                sum(group_b$retained_1)), 
+          n = c(n_3d, m_3d), 
+          alternative = "two.sided", 
+          correct = FALSE)
+
+```
+
+# I used The p-value is 0.07440966, which is confirmed by the inbuilt function. Because it is larger than 0.05 and thus not statistically significant, we cannot reject the null hypothesis that there is no difference in the proportion of players that are retained after 1 day across groups A and B at the 95% significance level.
+
+
+
+### Part e
+
+# H0: mu1 = mu2; There is no difference in the proportion of players that are retained after 7 day across groups A and B. 
+# H1: mu1 != mu2; There is a difference in the proportion of players that are retained after 7 day across groups A and B.
+# Test statistic: 2-sample z-test for proportion with unequal variance; Normal distribution
+# p-value: P(Z <= z) = 2(1-pnorm(|z|)); If p-value < significance level 0.05, we reject H0; Else, we fail to reject H0.
+
+```{r}
+
+n_3e <- length(group_a$retained_7)
+m_3e <- length(group_b$retained_7)
+p1_3e <- mean(group_a$retained_7)
+p2_3e <- mean(group_b$retained_7)
+s1_3e <- sd(filter(group_a, retained_7 == TRUE)$games_played)
+s2_3e <- sd(filter(group_b, retained_7 == TRUE)$games_played)
+p_3e <- mean(c(group_a$retained_7, group_b$retained_7))
+
+z_3e <- (p1_3e - p2_3e - 0) / (sqrt(p_3e * (1 - p_3e) * (1/n_3e + 1/m_3e)))
+pval_3e <- 2 * (1 - pnorm(abs(z_3e)))
+pval_3e
+
+# Compare with variance unequal (Welch's) test
+prop.test(x = c(sum(group_a$retained_7), 
+                sum(group_b$retained_7)), 
+          n = c(n_3e, m_3e), 
+          alternative = "two.sided", 
+          correct = FALSE)
+
+```
+
+# The p-value is 0.00155425, which is confirmed by the inbuilt function. Because it is less than 0.05 and thus statistically significant, we reject the null hypothesis, while the alternative hypothesis that there is difference in the proportion of players that are retained after 7 day across groups A and B is in favored at the 0.05 significance level.
+
+
+### Part f
+
+#Based on all of the analyses I have conducted, I would recommend sticking with version A of the game where the challenge remains at level 10. Even though the null hypotheses that there is no difference in the number of games played in the first 14 days or in the proportion of players that are retained after 1 day were both not rejected, it does not mean they were proved. On the other hand, the alternative hypothesis that there is difference in the proportion of players that are retained after 7 days was in favor, which means there exists the difference that we need to pay attention to. Comparing the proportion in both groups, we find that the proportion of Group A is slightly higher than that of group B. Therefore, Version A could have been more popular than Version B.
+
+
+
+
+
+
+
+
+
+
+
